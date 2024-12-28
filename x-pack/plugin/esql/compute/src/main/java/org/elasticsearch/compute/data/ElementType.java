@@ -18,6 +18,7 @@ public enum ElementType {
     LONG("Long", BlockFactory::newLongBlockBuilder),
     FLOAT("Float", BlockFactory::newFloatBlockBuilder),
     DOUBLE("Double", BlockFactory::newDoubleBlockBuilder),
+    AGGREGATED_DOUBLE_METRIC("AggregatedDoubleMetric", BlockFactory::newAggregatedDoubleMetricBlockBuilder),
     /**
      * Blocks containing only null values.
      */

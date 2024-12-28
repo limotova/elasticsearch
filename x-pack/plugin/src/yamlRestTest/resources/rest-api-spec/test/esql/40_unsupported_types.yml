@@ -81,7 +81,7 @@ setup:
         body:
           - { "index": { } }
           - {
-            "aggregate_metric_double": { "min": 1.0, "max": 3.0 },
+            "aggregate_metric_double": { "min": 1.0, "max": 3.0, "sum": 15.3, "value_count": 8 },
             "binary": "U29tZSBiaW5hcnkgYmxvYg==",
             "completion": "foo bar",
             "date_nanos": "2015-01-01T12:10:30.123456789Z",
@@ -131,7 +131,7 @@ unsupported:
           query: 'from test'
 
   - match: { columns.0.name: aggregate_metric_double }
-  - match: { columns.0.type: unsupported }
+  - match: { columns.0.type: aggregate_metric_double }
   - match: { columns.1.name: binary }
   - match: { columns.1.type: unsupported }
   - match: { columns.2.name: completion }
