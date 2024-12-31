@@ -519,7 +519,11 @@ public class AggregateDoubleMetricFieldMapper extends FieldMapper {
             var countFieldType = metricFields.get(Metric.value_count);
             return new BlockDocValuesReader.DocValuesBlockLoader() {
 
-                static NumericDocValues getNumericDocValues(String fieldName, LeafReader leafReader) throws IOException {
+                static NumericDocValues getNumericDocValues(NumberFieldMapper.NumberFieldType field, LeafReader leafReader) throws IOException {
+                    if (field == null) {
+                        return null;
+                    }
+                    String fieldName = field.name();
                     var values = leafReader.getNumericDocValues(fieldName);
                     if (values != null) {
                         return values;
@@ -531,14 +535,15 @@ public class AggregateDoubleMetricFieldMapper extends FieldMapper {
 
                 @Override
                 public AllReader reader(LeafReaderContext context) throws IOException {
-                    NumericDocValues minValues = getNumericDocValues(minFieldType.name(), context.reader());
-                    if (minValues == null) {
+                    NumericDocValues minValues = getNumericDocValues(minFieldType, context.reader());
+                    NumericDocValues maxValues = getNumericDocValues(maxFieldType, context.reader());
+                    NumericDocValues sumValues = getNumericDocValues(sumFieldType, context.reader());
+                    NumericDocValues valueCountValues = getNumericDocValues(countFieldType, context.reader());
+
+                    // TODO: We only support having all subfields; if any are missing it should fail, for now
+                    if (minValues == null || maxValues == null || sumValues == null || valueCountValues == null) {
                         return new ConstantNullsReader();
                     }
-
-                    NumericDocValues maxValues = getNumericDocValues(maxFieldType.name(), context.reader());
-                    NumericDocValues sumValues = getNumericDocValues(sumFieldType.name(), context.reader());
-                    NumericDocValues valueCountValues = getNumericDocValues(countFieldType.name(), context.reader());
                     return new BlockDocValuesReader() {
 
                         private int docID = -1;
