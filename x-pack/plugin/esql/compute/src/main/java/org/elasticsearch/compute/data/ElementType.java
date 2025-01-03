@@ -34,7 +34,7 @@ public enum ElementType {
     /**
      * Composite blocks which contain array of sub-blocks.
      */
-    COMPOSITE("Composite", (blockFactory, estimatedSize) -> { throw new UnsupportedOperationException("can't build composite blocks"); }),
+    COMPOSITE("Composite", BlockFactory::newAggregatedDoubleMetricBlockBuilder),
 
     /**
      * Intermediate blocks which don't support retrieving elements.
