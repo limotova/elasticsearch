@@ -607,6 +607,9 @@ public class EsqlCapabilities {
          */
         FULL_TEXT_FUNCTIONS_DISJUNCTIONS,
 
+        /**
+         * Support for aggregate_metric_double type
+         */
         AGGREGATE_METRIC_DOUBLE;
 
         private final boolean enabled;

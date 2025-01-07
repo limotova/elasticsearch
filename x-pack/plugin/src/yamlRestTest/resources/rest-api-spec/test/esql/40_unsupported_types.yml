@@ -309,7 +309,7 @@ unsupported with sort:
           path: /_query
           parameters: [ ]
           capabilities: [ aggregate_metric_double ]
-      reason: "support for date nanos type"
+      reason: "support for aggregate_metric_double type"
 
   - do:
       allowed_warnings_regex:

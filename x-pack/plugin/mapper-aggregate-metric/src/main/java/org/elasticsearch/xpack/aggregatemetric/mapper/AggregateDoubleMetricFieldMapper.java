@@ -542,7 +542,7 @@ public class AggregateDoubleMetricFieldMapper extends FieldMapper {
                     NumericDocValues valueCountValues = getNumericDocValues(countFieldType, context.reader());
 
                     // TODO: We only support having all subfields; if any are missing it should fail, for now
-                    if (minValues == null || maxValues == null || sumValues == null || valueCountValues == null) {
+                    if (minValues == null) {
                         return new ConstantNullsReader();
                     }
                     return new BlockDocValuesReader() {

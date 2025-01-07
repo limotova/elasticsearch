@@ -150,7 +150,19 @@ public class TestBlock implements BlockLoader.Block {
 
             @Override
             public BlockLoader.AggregateDoubleMetricBuilder aggregateDoubleMetricBuilder(int count) {
-                return null;
+                class AggregateDoubleMetricsBuilder extends TestBlock.Builder implements BlockLoader.AggregateDoubleMetricBuilder {
+                    @Override
+                    public BlockLoader.AggregateDoubleMetricBuilder append(double min, double max, double sum, int valueCount) {
+                        List<Number> row = new ArrayList<>();
+                        row.add(min);
+                        row.add(max);
+                        row.add(sum);
+                        row.add(valueCount);
+                        add(row);
+                        return this;
+                    }
+                }
+                return new AggregateDoubleMetricsBuilder();
             }
         };
     }
