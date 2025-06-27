@@ -527,3 +527,30 @@ setup:
   - match: {values.5.1: 2}
   - match: {values.5.2: "dog"}
   - match: {values.5.3: "2021-04-29T21:00:00.000Z"}
+
+---
+"BUG":
+  - do:
+      indices.downsample:
+        index: test
+        target_index: test-downsample
+        body: >
+          {
+            "fixed_interval": "1h"
+          }
+  - is_true: acknowledged
+
+  # Single index where the field is an aggregate_metric_double
+  - do:
+      esql.query:
+        body:
+          query: "TS test-downsample |
+          STATS sum_of_avg = sum(avg_over_time(k8s.pod.network.rx)),
+                count = sum(count_over_time(k8s.pod.network.rx))
+                BY k8s.pod.name, time_bucket = bucket(@timestamp, 1 hour) |
+          LIMIT 10"
+
+  - length: {values: 4}
+  - length: {values.0: 4}
+
+# ./gradlew ":x-pack:plugin:yamlRestTest" --tests "org.elasticsearch.xpack.test.rest.XPackRestIT.test {p0=esql/46_downsample/BUG}"
