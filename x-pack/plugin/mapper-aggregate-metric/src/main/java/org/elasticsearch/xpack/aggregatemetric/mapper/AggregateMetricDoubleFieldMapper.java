@@ -319,7 +319,7 @@ public class AggregateMetricDoubleFieldMapper extends FieldMapper {
             return Collections.unmodifiableMap(metricFields);
         }
 
-        Metric getDefaultMetric() {
+        public Metric getDefaultMetric() {
             return defaultMetric;
         }
 

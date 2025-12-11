@@ -227,6 +227,7 @@ import static org.hamcrest.Matchers.startsWith;
 public class LogicalPlanOptimizerTests extends AbstractLogicalPlanOptimizerTests {
     private static final LiteralsOnTheRight LITERALS_ON_THE_RIGHT = new LiteralsOnTheRight();
 
+
     public void testEvalWithScoreImplicitLimit() {
         var plan = plan("""
             FROM test

@@ -2258,36 +2258,26 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
             Map<String, FieldAttribute> unionFields = new HashMap<>();
             Holder<Boolean> aborted = new Holder<>(Boolean.FALSE);
             var newPlan = plan.transformExpressionsOnly(AggregateFunction.class, aggFunc -> {
-                if (aggFunc.field() instanceof FieldAttribute fa && fa.field() instanceof InvalidMappedField mtf) {
-                    if (mtf.types().contains(AGGREGATE_METRIC_DOUBLE) == false
-                        || mtf.types().stream().allMatch(f -> f == AGGREGATE_METRIC_DOUBLE || f.isNumeric()) == false) {
+                if (aggFunc.field() instanceof FieldAttribute fa && fa.field() instanceof InvalidMappedField imf) {
+                    if (imf.types().contains(AGGREGATE_METRIC_DOUBLE) == false
+                        || imf.types().stream().allMatch(f -> f == AGGREGATE_METRIC_DOUBLE || f.isNumeric()) == false) {
                         aborted.set(Boolean.TRUE);
                         return aggFunc;
                     }
-                    Map<String, Expression> typeConverters = typeConverters(aggFunc, fa, mtf);
-                    if (typeConverters == null) {
-                        aborted.set(Boolean.TRUE);
-                        return aggFunc;
-                    }
-                    var newField = unionFields.computeIfAbsent(
-                        Attribute.rawTemporaryName(fa.name(), aggFunc.functionName(), aggFunc.sourceText()),
-                        newName -> new FieldAttribute(
-                            fa.source(),
-                            fa.parentName(),
-                            fa.qualifier(),
-                            newName,
-                            MultiTypeEsField.resolveFrom(mtf, typeConverters),
-                            fa.nullable(),
-                            null,
-                            true
-                        )
-                    );
+                    var newName = Attribute.rawTemporaryName(fa.name(), aggFunc.functionName(), aggFunc.sourceText());
+                    var newField = new FieldAttribute(fa.source(), fa.parentName(), fa.qualifier(), newName,
+                        new EsField(imf.getName(), AGGREGATE_METRIC_DOUBLE, imf.getProperties(), imf.isAggregatable(), imf.getTimeSeriesFieldType()),
+                        fa.nullable(),
+                        null,
+                        true);
+                    unionFields.put(newName, newField);
                     List<Expression> children = new ArrayList<>(aggFunc.children());
                     children.set(0, newField);
                     return aggFunc.replaceChildren(children);
                 }
                 return aggFunc;
             });
+            // TODO: push down the new field into EsRelations
             if (unionFields.isEmpty() || aborted.get()) {
                 return plan;
             }
@@ -2307,10 +2297,10 @@ public class Analyzer extends ParameterizedRuleExecutor<LogicalPlan, AnalyzerCon
                 // Grabbing the count value with FromAggregateMetricDouble the same way we do with min/max/sum would result in
                 // a single Int field, and incorrectly be treated as 1 document (instead of however many originally went into
                 // the aggregate metric double).
-                if (metric == AggregateMetricDoubleBlockBuilder.Metric.COUNT
-                    || metric == AggregateMetricDoubleBlockBuilder.Metric.DEFAULT) {
+//                convert = new ToAggregateMetricDouble(fa.source(), fa);
+                if (metric == AggregateMetricDoubleBlockBuilder.Metric.COUNT) {
                     convert = new ToAggregateMetricDouble(fa.source(), fa);
-                } else if (type == AGGREGATE_METRIC_DOUBLE) {
+                } else if (type == AGGREGATE_METRIC_DOUBLE || metric == AggregateMetricDoubleBlockBuilder.Metric.DEFAULT) {
                     convert = FromAggregateMetricDouble.withMetric(aggFunc.source(), fa, metric);
                 } else if (type.isNumeric()) {
                     convert = new ToDouble(fa.source(), fa);

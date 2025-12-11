@@ -14,6 +14,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.ConjunctionUtils;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.elasticsearch.common.logging.HeaderWarning;
@@ -70,16 +71,19 @@ import org.elasticsearch.search.lookup.SearchLookup;
 import org.elasticsearch.search.lookup.SourceFilter;
 import org.elasticsearch.search.sort.SortAndFormats;
 import org.elasticsearch.search.sort.SortBuilder;
+import org.elasticsearch.xpack.aggregatemetric.mapper.AggregateMetricDoubleFieldMapper;
 import org.elasticsearch.xpack.esql.core.expression.Attribute;
 import org.elasticsearch.xpack.esql.core.expression.Expression;
 import org.elasticsearch.xpack.esql.core.expression.FieldAttribute;
 import org.elasticsearch.xpack.esql.core.expression.FoldContext;
 import org.elasticsearch.xpack.esql.core.type.DataType;
+import org.elasticsearch.xpack.esql.core.type.EsField;
 import org.elasticsearch.xpack.esql.core.type.FunctionEsField;
 import org.elasticsearch.xpack.esql.core.type.KeywordEsField;
 import org.elasticsearch.xpack.esql.core.type.MultiTypeEsField;
 import org.elasticsearch.xpack.esql.core.type.PotentiallyUnmappedKeywordEsField;
 import org.elasticsearch.xpack.esql.expression.function.scalar.EsqlScalarFunction;
+import org.elasticsearch.xpack.esql.expression.function.scalar.convert.ToDouble;
 import org.elasticsearch.xpack.esql.plan.physical.EsQueryExec;
 import org.elasticsearch.xpack.esql.plan.physical.EsQueryExec.Sort;
 import org.elasticsearch.xpack.esql.plan.physical.EstimatesRowSize;
@@ -102,6 +106,9 @@ import java.util.function.IntFunction;
 import static org.elasticsearch.common.lucene.search.Queries.newNonNestedFilter;
 import static org.elasticsearch.compute.lucene.LuceneSourceOperator.NO_LIMIT;
 import static org.elasticsearch.index.get.ShardGetService.maybeExcludeVectorFields;
+import static org.elasticsearch.xpack.esql.core.type.DataType.AGGREGATE_METRIC_DOUBLE;
+import static org.elasticsearch.xpack.esql.core.type.DataType.DOUBLE;
+import static org.elasticsearch.xpack.esql.core.type.DataType.INTEGER;
 
 public class EsPhysicalOperationProviders extends AbstractPhysicalOperationProviders {
     private static final Logger logger = LogManager.getLogger(EsPhysicalOperationProviders.class);
@@ -203,8 +210,29 @@ public class EsPhysicalOperationProviders extends AbstractPhysicalOperationProvi
 
         // Apply any block loader function if present
         BlockLoaderFunctionConfig functionConfig = null;
+        boolean aggMetricConfig = false;
+        boolean aggMetric = false;
+        boolean isCount = false;
         if (attr instanceof FieldAttribute fieldAttr && fieldAttr.field() instanceof FunctionEsField functionEsField) {
             functionConfig = functionEsField.functionConfig();
+            // Add special logic for aggregate_metric_double
+            aggMetricConfig = Set.of(BlockLoaderFunctionConfig.Function.AMD_DEFAULT, BlockLoaderFunctionConfig.Function.AMD_COUNT, BlockLoaderFunctionConfig.Function.AMD_MAX, BlockLoaderFunctionConfig.Function.AMD_MIN, BlockLoaderFunctionConfig.Function.AMD_SUM).contains(functionConfig.function());
+            if (aggMetricConfig) {
+                isCount = functionConfig.function() == BlockLoaderFunctionConfig.Function.AMD_COUNT;
+                MappedFieldType mappedFieldType = shardContext.fieldType(fieldAttr.fieldName().string());
+                if (mappedFieldType instanceof AggregateMetricDoubleFieldMapper.AggregateMetricDoubleFieldType amdType) {
+                    aggMetric = true;
+                    AggregateMetricDoubleFieldMapper.Metric defaultMetric = amdType.getDefaultMetric();
+                    functionConfig = switch (defaultMetric) {
+                        case max -> new BlockLoaderFunctionConfig.JustFunction(BlockLoaderFunctionConfig.Function.AMD_MAX);
+                        case min -> new BlockLoaderFunctionConfig.JustFunction(BlockLoaderFunctionConfig.Function.AMD_MIN);
+                        case sum -> new BlockLoaderFunctionConfig.JustFunction(BlockLoaderFunctionConfig.Function.AMD_SUM);
+                        case value_count -> new BlockLoaderFunctionConfig.JustFunction(BlockLoaderFunctionConfig.Function.AMD_COUNT);
+                    };
+                } else {
+                    functionConfig = null;
+                }
+            }
         }
         boolean isUnsupported = attr.dataType() == DataType.UNSUPPORTED;
         String fieldName = getFieldName(attr);
@@ -217,6 +245,18 @@ public class EsPhysicalOperationProviders extends AbstractPhysicalOperationProvi
             return conversion == null
                 ? BlockLoader.CONSTANT_NULLS
                 : new TypeConvertingBlockLoader(blockLoader, (EsqlScalarFunction) conversion);
+        }
+
+        if (aggMetricConfig && aggMetric == false) {
+            // we need to convert
+            var fa = ((FieldAttribute) attr);
+            var field = fa.field();
+            var fa2 = new FieldAttribute(fa.source(), fa.parentName(), fa.qualifier(), fa.name(),
+                new EsField(field.getName(), INTEGER, field.getProperties(), field.isAggregatable(), field.getTimeSeriesFieldType()),
+                fa.nullable(),
+                null,
+                true);
+            return new TypeConvertingBlockLoader(blockLoader, new ToDouble(fa2.source(), fa2));
         }
         return blockLoader;
     }

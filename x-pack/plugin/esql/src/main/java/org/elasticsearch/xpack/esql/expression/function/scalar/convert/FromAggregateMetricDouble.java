@@ -38,6 +38,7 @@ import org.elasticsearch.xpack.esql.stats.SearchStats;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.elasticsearch.xpack.esql.core.expression.TypeResolutions.ParamOrdinal.DEFAULT;
@@ -62,7 +63,7 @@ public class FromAggregateMetricDouble extends EsqlScalarFunction implements Con
         Source source,
         @Param(
             name = "aggregate_metric_double",
-            type = { "aggregate_metric_double" },
+            type = { "aggregate_metric_double", "int", "double", "long" },
             description = "Aggregate double metric to convert."
         ) Expression field,
         @Param(name = "subfieldIndex", type = "int", description = "Index of subfield") Expression subfieldIndex

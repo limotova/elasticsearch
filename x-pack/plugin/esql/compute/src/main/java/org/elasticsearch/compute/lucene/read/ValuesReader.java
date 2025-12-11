@@ -44,6 +44,8 @@ public abstract class ValuesReader implements ReleasableIterator<Block[]> {
             return target;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         } finally {
             if (success == false) {
                 Releasables.closeExpectNoException(target);

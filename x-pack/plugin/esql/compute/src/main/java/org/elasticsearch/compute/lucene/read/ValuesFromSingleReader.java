@@ -112,7 +112,8 @@ class ValuesFromSingleReader extends ValuesReader {
                 loadFromRowStrideReaders(jumboBytes, target, storedFieldsSpec, rowStrideReaders, ctx, docs, offset);
             }
             for (ColumnAtATimeWork r : columnAtATimeReaders) {
-                target[r.idx] = (Block) r.reader.read(loaderBlockFactory, docs, offset, operator.fields[r.idx].info.nullsFiltered());
+                var block = (Block) r.reader.read(loaderBlockFactory, docs, offset, operator.fields[r.idx].info.nullsFiltered());
+                target[r.idx] = (Block) operator.fields[r.idx].loader.convert(block);
                 operator.sanityCheckBlock(r.reader, docs.count() - offset, target[r.idx], r.idx);
             }
             if (log.isDebugEnabled()) {

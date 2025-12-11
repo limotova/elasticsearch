@@ -1125,3 +1125,15 @@ min:double | std_dev:double     | pod:keyword
 715.0      | 208.69556775360613 | three
 602.0      | 375.77578421180897 | two
 ;
+
+asdf
+FROM k8s*
+| STATS min = min(network.eth0.tx) by pod
+| sort pod
+;
+
+min:double | std_dev:double     | pod:keyword
+193.0      | 427.98532685128356 | one
+715.0      | 208.69556775360613 | three
+602.0      | 375.77578421180897 | two
+;
