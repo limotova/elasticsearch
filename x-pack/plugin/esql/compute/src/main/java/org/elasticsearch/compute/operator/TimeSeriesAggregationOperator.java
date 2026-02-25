@@ -93,6 +93,7 @@ public class TimeSeriesAggregationOperator extends HashAggregationOperator {
     private final Rounding.Prepared timeBucket;
     private final DateFieldMapper.Resolution timeResolution;
     private ExpandingGroups expandingGroups = null;
+    private IntArray groupArray = null;
 
     public TimeSeriesAggregationOperator(
         Rounding.Prepared timeBucket,
@@ -205,17 +206,48 @@ public class TimeSeriesAggregationOperator extends HashAggregationOperator {
         }
         Rounding.Prepared optimizedTimeBucket = optimizeRoundingForTimeRange(tsBlockHash.minTimestamp(), tsBlockHash.maxTimestamp());
         this.expandingGroups = new ExpandingGroups(driverContext.bigArrays());
+
+        final long bucketSize = optimizedTimeBucket.nextRoundingValue(tsBlockHash.minTimestamp()) - tsBlockHash.minTimestamp();
+        final long numBuckets = (optimizedTimeBucket.nextRoundingValue(tsBlockHash.maxTimestamp()) - tsBlockHash.minTimestamp())
+            / bucketSize;
+        final long numTsids = tsBlockHash.numTsids();
+        this.groupArray = driverContext.bigArrays().newIntArray(numBuckets * numTsids);
+        groupArray.fill(0, groupArray.size(), -1);
+
+        // initialize group array with values from block hash
         for (long groupId = 0; groupId < numGroups; groupId++) {
             int tsid = tsBlockHash.tsidForGroup(groupId);
-            long endTimestamp = tsBlockHash.timestampForGroup(groupId);
-            long bucket = optimizedTimeBucket.nextRoundingValue(endTimestamp - timeResolution.convert(largestWindowMillis()));
-            bucket = Math.max(bucket, tsBlockHash.minTimestamp());
-            // Fill the missing buckets between (timestamp-window, timestamp)
-            while (bucket < endTimestamp) {
-                if (tsBlockHash.addGroup(tsid, bucket) >= 0) {
-                    expandingGroups.addGroup(Math.toIntExact(groupId));
+            long timestamp = tsBlockHash.timestampForGroup(groupId);
+            long index = tsid * numBuckets + (timestamp - tsBlockHash.minTimestamp()) / bucketSize;
+            groupArray.set(index, Math.toIntExact(groupId));
+        }
+
+        // go from end to start for each tsid and backfill
+        final long bucketsInWindow = windowMillis / bucketSize;
+        if (bucketsInWindow <= 1) {
+            return;
+        }
+        for (int tsid = 0; tsid < numTsids; tsid++) {
+            long timestamp = tsBlockHash.maxTimestamp();
+            while (timestamp > tsBlockHash.minTimestamp()) {
+                long tsidOffset = tsid * numBuckets;
+                long index = tsidOffset + (timestamp - tsBlockHash.minTimestamp()) / bucketSize;
+                int currentGroup = groupArray.get(index);
+                index--;
+                timestamp -= bucketSize;
+                if (currentGroup >= 0) {
+                    long currentBucket = 1;
+                    while (currentBucket < bucketsInWindow && timestamp >= tsBlockHash.minTimestamp()) {
+                        if (groupArray.get(index) >= 0) {
+                            break;
+                        }
+                        groupArray.set(index, Math.toIntExact(tsBlockHash.addGroup(tsid, timestamp)));
+                        expandingGroups.addGroup(Math.toIntExact(currentGroup));
+                        index--;
+                        timestamp -= bucketSize;
+                        currentBucket++;
+                    }
                 }
-                bucket = optimizedTimeBucket.nextRoundingValue(bucket);
             }
         }
     }
@@ -350,13 +382,27 @@ public class TimeSeriesAggregationOperator extends HashAggregationOperator {
 
             @Override
             public List<Integer> groupIdsFromWindow(int startingGroupId, Duration window) {
+                final long tsid = tsBlockHash.tsidForGroup(startingGroupId);
+                long startTimestamp = tsBlockHash.timestampForGroup(startingGroupId);
+                final long endTimestamp = Math.min(
+                    startTimestamp + timeResolution.convert(window.toMillis()),
+                    optimizedTimeBucket.nextRoundingValue(tsBlockHash.maxTimestamp())
+                );
+                final long bucketSize = optimizedTimeBucket.nextRoundingValue(tsBlockHash.minTimestamp()) - tsBlockHash.minTimestamp();
+                final long numBuckets = (optimizedTimeBucket.nextRoundingValue(tsBlockHash.maxTimestamp()) - tsBlockHash.minTimestamp())
+                    / bucketSize;
+
                 List<Integer> results = new ArrayList<>();
-                results.add(startingGroupId);
-                int nextGroupId = nextGroupId(startingGroupId);
-                long endTimestamp = tsBlockHash.timestampForGroup(startingGroupId) + timeResolution.convert(window.toMillis());
-                while (nextGroupId != -1 && rangeStartInMillis(nextGroupId) < endTimestamp) {
-                    results.add(nextGroupId);
-                    nextGroupId = nextGroupId(nextGroupId);
+                long index = (tsid * numBuckets) + (startTimestamp - tsBlockHash.minTimestamp()) / bucketSize;
+
+                while (startTimestamp < endTimestamp) {
+                    int current = groupArray.get(index);
+                    index++;
+                    if (current >= 0) {
+                        startingGroupId = current;
+                        results.add(startingGroupId);
+                    }
+                    startTimestamp = optimizedTimeBucket.nextRoundingValue(startTimestamp);
                 }
                 return results;
             }
@@ -449,6 +495,6 @@ public class TimeSeriesAggregationOperator extends HashAggregationOperator {
 
     @Override
     public void close() {
-        Releasables.close(expandingGroups, super::close);
+        Releasables.close(expandingGroups, groupArray, super::close);
     }
 }
