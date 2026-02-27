@@ -240,24 +240,23 @@ public class TimeSeriesAggregationOperator extends HashAggregationOperator {
         for (int tsid = 0; tsid < numTsids; tsid++) {
             final long tsidOffset = tsid * numBuckets;
             int timestampIndex = timestampsArray.length - 1;
-            while (timestampIndex > 0) {
-                int currentGroup = groupArray.get(tsidOffset + timestampIndex);
-                timestampIndex--;
-                if (currentGroup >= 0) {
-                    long currentBucket = 1;
-                    while (currentBucket < bucketsInWindow && timestampIndex >= 0) {
-                        if (groupArray.get(tsidOffset + timestampIndex) >= 0) {
-                            break;
-                        }
+            int prevGroup = groupArray.get(tsidOffset + timestampIndex--);
+            int currentBucket = prevGroup >= 0 ? 1 : Math.toIntExact(bucketsInWindow);
+            while (timestampIndex >= 0) {
+                if (groupArray.get(tsidOffset + timestampIndex) < 0) {
+                    if (currentBucket < bucketsInWindow) {
                         groupArray.set(
                             tsidOffset + timestampIndex,
                             Math.toIntExact(tsBlockHash.addGroup(tsid, timestampsArray[timestampIndex]))
                         );
-                        expandingGroups.addGroup(Math.toIntExact(currentGroup));
-                        timestampIndex--;
+                        expandingGroups.addGroup(Math.toIntExact(prevGroup));
                         currentBucket++;
                     }
+                } else {
+                    prevGroup = groupArray.get(tsidOffset + timestampIndex);
+                    currentBucket = 1;
                 }
+                timestampIndex--;
             }
         }
     }
